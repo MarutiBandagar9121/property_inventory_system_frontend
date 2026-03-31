@@ -5,14 +5,15 @@ import {
   getCoreRowModel,
   flexRender,
 } from "@tanstack/react-table";
-import { getAllProperties, getAllPropertyTypes } from "../api/properties";
-import { getAllCities, getAllLocations } from "../api/locations";
+import { getAllProperties, getAllPropertyTypes } from "../../api/properties";
+import { getAllCities, getAllLocations } from "../../api/locations";
 
 // Change this one number whenever you want a different page size
 const PAGE_SIZE = 20;
 
 export default function Properties() {
   const [searchParams, setSearchParams] = useSearchParams();
+
   const [cities, setCities] = useState([]);
   const [allLocations, setAllLocations] = useState([]);
   const [propertyTypes, setPropertyTypes] = useState([[]])
@@ -257,8 +258,7 @@ export default function Properties() {
   });
 
   function handleEdit(property) {
-    // TODO: open edit modal / navigate to edit page
-    console.log("Edit", property);
+    navigate(`/dashboard/properties/${property.id}/edit`);
   }
 
   function handleDelete(id) {
