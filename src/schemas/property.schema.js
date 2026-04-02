@@ -8,8 +8,8 @@ import {
 
 // ── Mirrors PropertyCreate (what you POST / PUT) ──────────────────────────────
 export const PropertyCreateSchema = z.object({
-  project_name: z.string().min(1, "Project name is required"),
-  project_grade: z.string().min(1, "Project grade is required"),
+  property_name: z.string().min(1, "Property name is required"),
+  property_grade: z.string().min(1, "Property grade is required"),
   city_id: z.number({ required_error: "Select a city" }),
   location_id: z.number({ required_error: "Select a location" }),
   sublocation_id: z.number({ required_error: "Select a sublocation" }),
@@ -24,11 +24,10 @@ export const PropertyCreateSchema = z.object({
   google_map_url: z.string().url("Must be a valid URL"),
   address_line1: z.string().min(1, "Address is required"),
   address_line2: z.string().optional().or(z.literal("")),
+  postal_code: z.string().optional().or(z.literal("")),
   total_property_area: z
     .number({ invalid_type_error: "Must be a number" })
     .positive("Must be greater than 0"),
-  total_property_area_unit: z.string().min(1, "Select a unit"),
-  property_sanction_type: z.string().min(1, "Select a sanction type"),
   tenant_profile: z.string().optional().or(z.literal("")),
   property_type_id: z.number({ required_error: "Select a property type" }),
 });
@@ -36,20 +35,19 @@ export const PropertyCreateSchema = z.object({
 // ── Mirrors PropertyResponse (what the API returns) ───────────────────────────
 export const PropertyResponseSchema = z.object({
   id: z.string().uuid(),
-  project_name: z.string(),
-  project_grade: z.string(),
-  city: CityRefSchema,
-  location: LocationRefSchema,
-  sublocation: SublocationRefSchema,
-  property_type: PropertyTypeRefSchema,
+  property_name: z.string(),
+  property_grade: z.string(),
+  city_id: z.number(),
+  location_id: z.number(),
+  sublocation_id: z.number(),
+  property_type_id: z.number(),
   latitude: z.number(),
   longitude: z.number(),
   google_map_url: z.string(),
   address_line1: z.string(),
   address_line2: z.string().nullable().optional(),
+  postal_code: z.string().nullable().optional(),
   total_property_area: z.number(),
-  total_property_area_unit: z.string(),
-  property_sanction_type: z.string(),
   tenant_profile: z.string().nullable().optional(),
 });
 

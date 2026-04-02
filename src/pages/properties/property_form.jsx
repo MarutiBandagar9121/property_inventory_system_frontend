@@ -1,15 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { PropertyCreateSchema } from "../../schemas/property.schema";
-import {
-  createProperty,
-  updateProperty,
-  getPropertyById,
-  getAllPropertyTypes,
-} from "../../api/properties";
-import { getAllCities, getLocationsByCity, getSublocations } from "../../api/locations";
+import { createProperty, getAllPropertyTypes } from "../../api/properties";
+import { getAllCities, getAllLocations, getAllSublocations } from "../../api/locations";
+import { PROJECT_GRADES } from "../../const/project.const";
 
 // ── Reusable field wrapper ────────────────────────────────────────────────────
 function Field({ label, error, required, children }) {
@@ -28,23 +24,19 @@ function Field({ label, error, required, children }) {
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-400";
 
-const PROJECT_GRADES = ["A+", "A", "B+", "B", "C"];
-const AREA_UNITS = ["sq ft", "sq m", "acres", "hectares", "yards"];
-const SANCTION_TYPES = ["Residential", "Commercial", "Mixed Use", "Industrial", "Agricultural"];
-
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function PropertyForm() {
-  const { id } = useParams(); // present on /properties/:id/edit
-  const isEdit = Boolean(id);
+export default function AddPropertyForm() {
   const navigate = useNavigate();
 
   // ── Dropdown data ───────────────────────────────────────────────────────────
+  const allLocationsRef = useRef([]);
+  const allSublocationsRef = useRef([]);
+
   const [cities, setCities] = useState([]);
   const [locations, setLocations] = useState([]);
   const [sublocations, setSublocations] = useState([]);
   const [propertyTypes, setPropertyTypes] = useState([]);
   const [loadingDropdowns, setLoadingDropdowns] = useState(true);
-  const [loadingProperty, setLoadingProperty] = useState(isEdit);
   const [submitError, setSubmitError] = useState(null);
 
   // ── RHF setup ───────────────────────────────────────────────────────────────
@@ -53,26 +45,24 @@ export default function PropertyForm() {
     handleSubmit,
     watch,
     setValue,
-    reset,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(PropertyCreateSchema),
     defaultValues: {
-      project_name: "",
-      project_grade: "",
+      property_name: "",
+      property_grade: "",
       city_id: undefined,
       location_id: undefined,
       sublocation_id: undefined,
+      property_type_id: undefined,
       latitude: undefined,
       longitude: undefined,
       google_map_url: "",
       address_line1: "",
       address_line2: "",
+      postal_code: "",
       total_property_area: undefined,
-      total_property_area_unit: "",
-      property_sanction_type: "",
       tenant_profile: "",
-      property_type_id: undefined,
     },
   });
 
@@ -81,96 +71,60 @@ export default function PropertyForm() {
 
   // ── Fetch static dropdown data once ────────────────────────────────────────
   useEffect(() => {
-    Promise.all([getAllCities(), getAllPropertyTypes()])
-      .then(([citiesData, typesData]) => {
+    Promise.all([getAllCities(), getAllLocations(), getAllSublocations(), getAllPropertyTypes()])
+      .then(([citiesData, locationsData, sublocationsData, typesData]) => {
         setCities(citiesData);
+        allLocationsRef.current = locationsData;
+        allSublocationsRef.current = sublocationsData;
         setPropertyTypes(typesData);
       })
+      .catch((err) => setSubmitError(err.message))
       .finally(() => setLoadingDropdowns(false));
   }, []);
 
-  // ── In edit mode: load the property and pre-fill the form ──────────────────
-  useEffect(() => {
-    if (!isEdit) return;
-    getPropertyById(id)
-      .then((property) => {
-        // Map the nested response objects back to their IDs for the form
-        reset({
-          project_name: property.project_name,
-          project_grade: property.project_grade,
-          city_id: property.city.id,
-          location_id: property.location.id,
-          sublocation_id: property.sublocation.id,
-          latitude: property.latitude,
-          longitude: property.longitude,
-          google_map_url: property.google_map_url,
-          address_line1: property.address_line1,
-          address_line2: property.address_line2 ?? "",
-          total_property_area: property.total_property_area,
-          total_property_area_unit: property.total_property_area_unit,
-          property_sanction_type: property.property_sanction_type,
-          tenant_profile: property.tenant_profile ?? "",
-          property_type_id: property.property_type.id,
-        });
-      })
-      .catch((err) => setSubmitError(err.message))
-      .finally(() => setLoadingProperty(false));
-  }, [id, isEdit, reset]);
-
-  // ── When city changes: fetch filtered locations, reset downstream ──────────
+  // ── When city changes: filter locations, reset downstream ──────────────────
   useEffect(() => {
     if (!watchedCityId) {
       setLocations([]);
       setSublocations([]);
       return;
     }
-    getLocationsByCity(watchedCityId).then((data) => {
-      setLocations(data);
-      // Only reset in add mode; in edit mode the initial reset already set these
-      if (!isEdit || loadingProperty) return;
-      setValue("location_id", undefined);
-      setValue("sublocation_id", undefined);
-      setSublocations([]);
-    });
+    setLocations(allLocationsRef.current.filter((l) => l.city_id === watchedCityId));
+    setValue("location_id", undefined);
+    setValue("sublocation_id", undefined);
+    setSublocations([]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchedCityId]);
 
-  // ── When location changes: fetch sublocations, reset sublocation ───────────
+  // ── When location changes: filter sublocations ────────────────────────────
   useEffect(() => {
     if (!watchedLocationId) {
       setSublocations([]);
       return;
     }
-    getSublocations(watchedLocationId).then((data) => {
-      setSublocations(data);
-      if (!isEdit || loadingProperty) return;
-      setValue("sublocation_id", undefined);
-    });
+    setSublocations(allSublocationsRef.current.filter((s) => s.location_id === watchedLocationId));
+    setValue("sublocation_id", undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchedLocationId]);
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   async function onSubmit(data) {
     setSubmitError(null);
-    // Convert optional empty strings to null before sending
     const payload = {
       ...data,
       address_line2: data.address_line2 || null,
+      postal_code: data.postal_code || null,
       tenant_profile: data.tenant_profile || null,
     };
     try {
-      if (isEdit) {
-        await updateProperty(id, payload);
-      } else {
-        await createProperty(payload);
-      }
+      await createProperty(payload);
       navigate("/dashboard/properties");
     } catch (err) {
       setSubmitError(err.message);
     }
   }
 
-  if (loadingDropdowns || loadingProperty) {
+  if (loadingDropdowns) {
     return <p className="text-gray-500">Loading...</p>;
   }
 
@@ -179,14 +133,8 @@ export default function PropertyForm() {
       {/* ── Page header ── */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            {isEdit ? "Edit Property" : "Add Property"}
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {isEdit
-              ? "Update the property details below."
-              : "Fill in the details to add a new property."}
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Add Property</h1>
+          <p className="text-sm text-gray-500 mt-1">Fill in the basic details to register a new property.</p>
         </div>
         <button
           type="button"
@@ -201,21 +149,19 @@ export default function PropertyForm() {
 
         {/* ── Section: Basic Info ── */}
         <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-          <h2 className="text-base font-semibold text-gray-800 border-b pb-2">
-            Basic Information
-          </h2>
+          <h2 className="text-base font-semibold text-gray-800 border-b pb-2">Basic Information</h2>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Project Name" error={errors.project_name?.message} required>
+            <Field label="Property Name" error={errors.property_name?.message} required>
               <input
-                {...register("project_name")}
+                {...register("property_name")}
                 placeholder="e.g. Sunrise Residency"
                 className={inputClass}
               />
             </Field>
 
-            <Field label="Project Grade" error={errors.project_grade?.message} required>
-              <select {...register("project_grade")} className={inputClass}>
+            <Field label="Property Grade" error={errors.property_grade?.message} required>
+              <select {...register("property_grade")} className={inputClass}>
                 <option value="">Select grade</option>
                 {PROJECT_GRADES.map((g) => (
                   <option key={g} value={g}>{g}</option>
@@ -237,23 +183,14 @@ export default function PropertyForm() {
               </select>
             </Field>
 
-            <Field label="Sanction Type" error={errors.property_sanction_type?.message} required>
-              <select {...register("property_sanction_type")} className={inputClass}>
-                <option value="">Select sanction type</option>
-                {SANCTION_TYPES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+            <Field label="Tenant Profile" error={errors.tenant_profile?.message}>
+              <input
+                {...register("tenant_profile")}
+                placeholder="e.g. Corporate, Retail, Mixed"
+                className={inputClass}
+              />
             </Field>
           </div>
-
-          <Field label="Tenant Profile" error={errors.tenant_profile?.message}>
-            <input
-              {...register("tenant_profile")}
-              placeholder="e.g. Corporate, Retail, Mixed"
-              className={inputClass}
-            />
-          </Field>
         </section>
 
         {/* ── Section: Location ── */}
@@ -308,13 +245,23 @@ export default function PropertyForm() {
             />
           </Field>
 
-          <Field label="Address Line 2" error={errors.address_line2?.message}>
-            <input
-              {...register("address_line2")}
-              placeholder="Apartment, suite, floor (optional)"
-              className={inputClass}
-            />
-          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Address Line 2" error={errors.address_line2?.message}>
+              <input
+                {...register("address_line2")}
+                placeholder="Apartment, suite, floor (optional)"
+                className={inputClass}
+              />
+            </Field>
+
+            <Field label="Postal Code" error={errors.postal_code?.message}>
+              <input
+                {...register("postal_code")}
+                placeholder="e.g. 400050"
+                className={inputClass}
+              />
+            </Field>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Latitude" error={errors.latitude?.message} required>
@@ -353,7 +300,7 @@ export default function PropertyForm() {
           <h2 className="text-base font-semibold text-gray-800 border-b pb-2">Property Area</h2>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Total Area" error={errors.total_property_area?.message} required>
+            <Field label="Total Area (sq ft)" error={errors.total_property_area?.message} required>
               <input
                 {...register("total_property_area", { valueAsNumber: true })}
                 type="number"
@@ -361,15 +308,6 @@ export default function PropertyForm() {
                 placeholder="e.g. 5000"
                 className={inputClass}
               />
-            </Field>
-
-            <Field label="Unit" error={errors.total_property_area_unit?.message} required>
-              <select {...register("total_property_area_unit")} className={inputClass}>
-                <option value="">Select unit</option>
-                {AREA_UNITS.map((u) => (
-                  <option key={u} value={u}>{u}</option>
-                ))}
-              </select>
             </Field>
           </div>
         </section>
@@ -394,9 +332,7 @@ export default function PropertyForm() {
             disabled={isSubmitting}
             className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition"
           >
-            {isSubmitting
-              ? isEdit ? "Saving..." : "Creating..."
-              : isEdit ? "Save Changes" : "Create Property"}
+            {isSubmitting ? "Creating..." : "Create Property"}
           </button>
         </div>
 

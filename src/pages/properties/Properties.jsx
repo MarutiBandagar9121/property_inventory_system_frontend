@@ -1,22 +1,24 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   useReactTable,
   getCoreRowModel,
   flexRender,
 } from "@tanstack/react-table";
 import { getAllProperties, getAllPropertyTypes } from "../../api/properties";
-import { getAllCities, getAllLocations } from "../../api/locations";
+import { getAllCities, getAllLocations, getAllSublocations } from "../../api/locations";
 
 // Change this one number whenever you want a different page size
 const PAGE_SIZE = 20;
 
 export default function Properties() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [cities, setCities] = useState([]);
   const [allLocations, setAllLocations] = useState([]);
-  const [propertyTypes, setPropertyTypes] = useState([[]])
+  const [allSublocations, setAllSublocations] = useState([]);
+  const [propertyTypes, setPropertyTypes] = useState([]);
   const [properties, setProperties] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -124,30 +126,27 @@ export default function Properties() {
     });
   }
 
-  // Fetch all property types
-  useEffect(()=>{
-    getAllPropertyTypes()
-    .then((data) => setPropertyTypes(data))
-    .catch((err) => setError(err.message));
-  },[])
+  // Fetch all reference data once on mount
+  useEffect(() => {
+    Promise.all([
+      getAllCities(),
+      getAllLocations(),
+      getAllSublocations(),
+      getAllPropertyTypes(),
+    ])
+      .then(([citiesData, locationsData, sublocationsData, typesData]) => {
+        setCities(citiesData);
+        setAllLocations(locationsData);
+        setAllSublocations(sublocationsData);
+        setPropertyTypes(typesData);
+      })
+      .catch((err) => setError(err.message));
+  }, []);
 
   // Arrays of IDs read from repeated URL params — passed directly to the API
   const cityIdsParam = searchParams.getAll("city_ids").map(Number);
   const locationIdsParam = searchParams.getAll("location_ids").map(Number);
   const typeIdsParam = searchParams.getAll("property_type_ids").map(Number);
-
-  useEffect(() => {
-    getAllCities()
-      .then((data) => setCities(data))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    getAllLocations()
-      .then((data) => setAllLocations(data))
-      .catch((err) => setError(err.message));
-  }, []);
 
   // Derived: which locations to show in the location dropdown.
   // If no city is selected (All) → show all 133 locations.
@@ -176,57 +175,66 @@ export default function Properties() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // ─── Lookup maps (id → name) built from reference data ──────────────────
+  const cityMap = useMemo(
+    () => Object.fromEntries(cities.map((c) => [c.id, c.name])),
+    [cities]
+  );
+  const locationMap = useMemo(
+    () => Object.fromEntries(allLocations.map((l) => [l.id, l.name])),
+    [allLocations]
+  );
+  const sublocationMap = useMemo(
+    () => Object.fromEntries(allSublocations.map((s) => [s.id, s.name])),
+    [allSublocations]
+  );
+  const typeMap = useMemo(
+    () => Object.fromEntries(propertyTypes.map((t) => [t.id, t.name])),
+    [propertyTypes]
+  );
+
   // ─── Column Definitions ───────────────────────────────────────────────────
-  // Each object here = one column in the table.
-  // `accessorKey`  → reads a direct field from your data object (e.g. row.project_name)
-  // `accessorFn`   → lets you compute/combine values (e.g. city.name + location.name)
-  // `cell`         → fully custom JSX for that cell (used for Actions)
-  // `header`       → the column heading text
   const columns = useMemo(
     () => [
       {
         header: "#",
-        // `info.row.index` is the row number within the CURRENT page (0-based)
-        // We add +1 to show 1, 2, 3... instead of 0, 1, 2...
         cell: (info) => info.row.index + 1,
       },
       {
-        accessorKey: "project_name",
-        header: "Project Name",
+        accessorKey: "property_name",
+        header: "Property Name",
       },
       {
-        header: "City / Location",
-        // accessorFn receives the full row object so we can drill into nested objects
+        header: "City / Location / Sublocation",
         accessorFn: (row) =>
-          `${row.city?.name ?? "—"} / ${row.location?.name ?? "—"}`,
+          [
+            cityMap[row.city_id] ?? "—",
+            locationMap[row.location_id] ?? "—",
+            sublocationMap[row.sublocation_id] ?? "—",
+          ].join(" / "),
       },
       {
         header: "Property Type",
-        accessorFn: (row) => row.property_type?.name ?? "—",
+        accessorFn: (row) => typeMap[row.property_type_id] ?? "—",
       },
       {
-        id: "actions", // `id` is required when there's no accessorKey
+        header: "Grade",
+        accessorKey: "property_grade",
+      },
+      {
+        id: "actions",
         header: "Actions",
-        // `row.original` gives you the full raw data object for that row
         cell: ({ row }) => (
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleEdit(row.original)}
-              className="text-xs px-3 py-1 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition"
-            >
-              Edit
-            </button>
-            <button
-              onClick={() => handleDelete(row.original.id)}
-              className="text-xs px-3 py-1 rounded bg-red-100 text-red-600 hover:bg-red-200 transition"
-            >
-              Delete
-            </button>
-          </div>
+          <button
+            onClick={() => handleManage(row.original)}
+            className="text-xs px-3 py-1 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition"
+          >
+            Manage
+          </button>
         ),
       },
     ],
-    []
+    [cityMap, locationMap, sublocationMap, typeMap]
   );
 
   // ─── Table Instance ───────────────────────────────────────────────────────
@@ -257,13 +265,8 @@ export default function Properties() {
     manualPagination: true,
   });
 
-  function handleEdit(property) {
-    navigate(`/dashboard/properties/${property.id}/edit`);
-  }
-
-  function handleDelete(id) {
-    // TODO: call delete API then remove from state
-    console.log("Delete", id);
+  function handleManage(property) {
+    navigate(`/dashboard/properties/${property.id}`);
   }
 
   if (loading) return <p className="text-gray-500">Loading properties...</p>;

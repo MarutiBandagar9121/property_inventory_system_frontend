@@ -16,7 +16,6 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="properties" element={<Properties />} />
           <Route path="properties/new" element={<PropertyForm />} />
-          <Route path="properties/:id/edit" element={<PropertyForm />} />
           <Route path="employees" element={<Employees />} />
           <Route path="leads" element={<Leads />} />
         </Route>
